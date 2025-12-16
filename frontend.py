@@ -4,7 +4,7 @@ import requests
 
 # CONFIGURATION
 # ⚠️ REPLACE THIS WITH YOUR PUBLIC API URL AFTER DEPLOYING STEP 3
-API_URL = "http://3.7.252.140:8000/recommend"
+API_URL = "http://3.110.166.63:8000"
 
 st.set_page_config(page_title="SHL Recommender", page_icon="🎯")
 st.title("🎯 SHL Assessment Recommender")
