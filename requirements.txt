@@ -1,0 +1,15 @@
+# Save this content as requirements.txt
+Flask
+Flask-CORS
+requests
+streamlit
+langchain
+langchain-core
+langchain-community
+langchain-huggingface
+faiss-cpu # Use faiss-cpu if you don't have a GPU
+sentence-transformers
+numpy
+pandas
+pyngrok
+gunicorn # For production deployment (Render/Heroku)
