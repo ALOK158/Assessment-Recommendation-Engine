@@ -1,10 +1,10 @@
 # Usage: streamlit run frontend.py
 import streamlit as st
-import requests
+import requests  
 
 # CONFIGURATION
 # ⚠️ REPLACE THIS WITH YOUR PUBLIC API URL AFTER DEPLOYING STEP 3
-API_URL = "http://3.110.166.63:8000"
+API_URL = "http://13.233.126.10:8000/recommend"
 
 st.set_page_config(page_title="SHL Recommender", page_icon="🎯")
 st.title("🎯 SHL Assessment Recommender")
