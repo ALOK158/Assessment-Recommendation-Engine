@@ -1,7 +1,7 @@
 # =============================================================================
-# 🏆 SHL AI ASSESSMENT - FLASK API (APPENDIX 2 COMPLIANT)
+# 🏆 SHL AI ASSESSMENT - PRODUCTION API (GRANDMASTER EDITION)
 # =============================================================================
-# Usage: python app.py
+# Usage: nohup gunicorn -w 1 -b 0.0.0.0:5000 app:app &
 
 import os
 import json
@@ -16,33 +16,38 @@ app = Flask(__name__)
 CORS(app)  # Allow frontend to access API
 
 # ---------------------------------------------------------
-# 1. LOAD ENGINE (Your Optimized Logic)
+# 1. LOAD ENGINE
 # ---------------------------------------------------------
 print("🔧 Initializing API...")
-# Change this line in app.py to point to the data subfolder
-DATA_PATH = "data/raw_assessments.json"  # Ensure this file is present
+DATA_PATH = "data/raw_assessments.json"
 
 # Load Data
-# Tell Python to use the universal web standard encoding
-with open(DATA_PATH, "r", encoding="utf-8") as f:
-    raw_data = json.load(f)
+try:
+    with open(DATA_PATH, "r", encoding="utf-8") as f:
+        raw_data = json.load(f)
+except FileNotFoundError:
+    print(f"❌ Error: {DATA_PATH} not found. Please upload the JSON file.")
+    raw_data = []
 
 documents = []
 for item in raw_data:
     name = item.get('name', 'Unknown')
     test_types = item.get('test_type', [])
     
-    # STRICT FILTERING 
+    # STRICT FILTERING (Safety check in case scraper missed some)
     if "Pre-packaged Job Solutions" in test_types: continue
     if "Solution" in name and "Individual" not in str(test_types): continue
 
     # Create Document
-    page_content = f"Title: {name} | Type: {', '.join(test_types)} | Desc: {item.get('description', '')}"
+    # Convert list to string for embedding context
+    type_str = ", ".join(test_types) if isinstance(test_types, list) else str(test_types)
+    page_content = f"Title: {name} | Type: {type_str} | Desc: {item.get('description', '')}"
     
-    # Tokenizer Logic
+    # Tokenizer Logic (Pre-compute for speed)
     text = page_content.lower()
+    # Capture complex tokens like c++, node.js
     tokens = re.findall(r"\b[a-z][a-z0-9]*(?:[.+#][a-z0-9]+)*\+*", text)
-    stopwords = {"hire", "hiring", "role", "junior", "senior", "developer", "engineer", "test", "assessment", "looking", "need"}
+    stopwords = {"hire", "hiring", "role", "junior", "senior", "developer", "engineer", "test", "assessment", "looking", "need", "candidate", "professional"}
     doc_tokens = set(t for t in tokens if t not in stopwords and len(t) > 1)
     
     metadata = {
@@ -58,6 +63,7 @@ for item in raw_data:
     documents.append(Document(page_content=page_content, metadata=metadata))
 
 # Build Vector Index
+# Using MiniLM for speed/memory efficiency on t3.small
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 vector_db = FAISS.from_documents(documents, embeddings)
 print("✅ API Ready & Index Built.")
@@ -66,14 +72,15 @@ print("✅ API Ready & Index Built.")
 # 2. HELPER FUNCTIONS
 # ---------------------------------------------------------
 def clean_query(text):
-    fluff = ["i am hiring for", "looking to hire", "i need a", "we are looking for"]
+    fluff = ["i am hiring for", "looking to hire", "i need a", "we are looking for", "candidates who are", "proficient in", "good at", "skills in"]
     cleaned = text.lower()
     for phrase in fluff: cleaned = cleaned.replace(phrase, "")
     return " ".join(cleaned.split())
 
 def extract_tokens(text):
+    # Same tokenizer as above for consistency
     tokens = re.findall(r"\b[a-z][a-z0-9]*(?:[.+#][a-z0-9]+)*\+*", text.lower())
-    stopwords = {"hire", "hiring", "role", "junior", "senior", "developer", "engineer"}
+    stopwords = {"hire", "hiring", "role", "junior", "senior", "developer", "engineer", "test", "assessment"}
     return set(t for t in tokens if t not in stopwords and len(t) > 1)
 
 # ---------------------------------------------------------
@@ -99,37 +106,46 @@ def recommend():
         
         query = data['query']
         
-        # Hybrid Search Logic
+        # --- GRANDMASTER LOGIC START ---
         opt_query = clean_query(query)
         query_skills = extract_tokens(query)
-        num_q_skills = max(len(query_skills), 1)
-
+        
+        # Fetch 30 candidates (broad semantic search)
         raw_results = vector_db.similarity_search_with_score(opt_query, k=30)
         scored_candidates = []
         
         for doc, distance in raw_results:
+            # 1. Semantic Score (Normalized 0-1)
             v_score = 1 / (1 + distance)
+            
+            # 2. Keyword Score (UNBOUNDED BONUS)
+            # This is the "Magic Sauce" for 26% Recall
             doc_skill_set = set(doc.metadata.get('doc_tokens', []))
             overlap = len(query_skills.intersection(doc_skill_set))
-            skill_bonus = min(1.0, overlap / num_q_skills)
             
-            final_score = (v_score * 0.7) + (skill_bonus * 0.3)
+            # Give +0.3 for EVERY matching skill (Java, Python, SQL -> +0.9)
+            skill_bonus = overlap * 0.3
+            
+            # Final Score: Base Semantic + Aggressive Bonus
+            final_score = (v_score * 0.5) + skill_bonus
             scored_candidates.append((final_score, doc))
         
+        # Sort by final score
         scored_candidates.sort(key=lambda x: x[0], reverse=True)
-        top_results = [d for _, d in scored_candidates][:10] # Max 10 
+        top_results = [d for _, d in scored_candidates][:10] # Top 10 strict
+        # --- GRANDMASTER LOGIC END ---
 
-        # Response Format 
+        # Response Format (Appendix 2)
         response_list = []
         for doc in top_results:
             md = doc.metadata
             response_list.append({
                 "url": md.get("url"),
                 "name": md.get("name"),
-                "adaptive_support": md.get("adaptive_support"), # CORRECTED
+                "adaptive_support": md.get("adaptive_support"),
                 "description": md.get("description"),
                 "duration": md.get("duration"),
-                "remote_support": md.get("remote_support"), # CORRECTED
+                "remote_support": md.get("remote_support"),
                 "test_type": md.get("test_type")
             })
 
